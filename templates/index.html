@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SE Engine</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1a1a1a; color: #fff; font-family: Arial, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+    /* ── AI Chat strip ── */
+    #chatStrip {
+      flex-shrink: 0; border-top: 1px solid #2a2a2a;
+      background: #0d0d0d; display: flex; flex-direction: column;
+      height: 220px; overflow: hidden;
+    }
+    #chatStrip.expanded { height: 380px; }
+    #chatToggle {
+      display: flex; align-items: center; gap: 8px; padding: 6px 14px;
+      border-bottom: 1px solid #1e1e1e; cursor: pointer; user-select: none;
+      font-size: 11px; color: #666; flex-shrink: 0;
+    }
+    #chatToggle:hover { color: #aaa; }
+    #chatToggle .dot { width: 6px; height: 6px; border-radius: 50%; background: #5BD99F; }
+    #chatToggle .label { font-weight: bold; color: #888; letter-spacing: 1px; text-transform: uppercase; }
+    #chatToggle .hint { color: #444; font-size: 10px; }
+    #chatToggle .expand-btn { margin-left: auto; font-size: 13px; color: #444; }
+    #chatMsgs {
+      flex: 1; overflow-y: auto; padding: 8px 14px; display: flex; flex-direction: column; gap: 6px;
+      scrollbar-width: thin; scrollbar-color: #2a2a2a transparent;
+    }
+    .cmsg { font-size: 12px; line-height: 1.5; padding: 6px 10px; border-radius: 5px; max-width: 90%; }
+    .cmsg.user { align-self: flex-end; background: rgba(112,48,160,0.25); border: 1px solid rgba(112,48,160,0.35); color: #e0d0ff; }
+    .cmsg.ai   { align-self: flex-start; background: rgba(255,255,255,0.04); border: 1px solid #2a2a2a; color: #bbb; }
+    .cmsg.sys  { align-self: center; color: #444; font-size: 11px; background: none; border: none; }
+    #chatInputRow {
+      display: flex; gap: 8px; padding: 8px 12px; flex-shrink: 0;
+      border-top: 1px solid #1e1e1e;
+    }
+    #chatInput {
+      flex: 1; background: #111; border: 1px solid #2a2a2a; border-radius: 4px;
+      color: #ddd; font-size: 12px; font-family: Arial, sans-serif;
+      padding: 7px 10px; resize: none; outline: none; height: 34px;
+    }
+    #chatInput:focus { border-color: #7030A0; }
+    #chatInput::placeholder { color: #444; }
+    #chatSend {
+      padding: 0 16px; background: #7030A0; border: none; border-radius: 4px;
+      color: #fff; font-size: 12px; font-weight: bold; cursor: pointer; height: 34px;
+    }
+    #chatSend:hover { background: #834895; }
+    #chatSend:disabled { opacity: 0.4; cursor: default; }
+
+    header {
+      background: #111; padding: 10px 20px;
+      display: flex; align-items: center; gap: 12px;
+      border-bottom: 1px solid #333; flex-shrink: 0;
+    }
+    header h1 { font-size: 16px; color: #7030A0; letter-spacing: 2px; margin-right: 8px; }
+    .btn { padding: 7px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-family: Arial; font-weight: bold; }
+    .btn-primary { background: #7030A0; color: #fff; }
+    .btn-primary:hover { background: #834895; }
+    .btn-download { background: #1e1e1e; color: #fff; border: 1px solid #444; }
+    .btn-download:hover { background: #2a2a2a; }
+    .btn-preset { background: #2a2a2a; color: #ccc; border: 1px solid #3a3a3a; font-weight: normal; }
+    .btn-preset:hover { background: #383838; color: #fff; }
+    .preset-group { display: flex; gap: 6px; margin-left: 12px; padding-left: 12px; border-left: 1px solid #333; flex-wrap: wrap; }
+    .preset-group label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 1px; align-self: center; margin-right: 4px; }
+    #status { font-size: 12px; color: #666; margin-left: auto; }
+
+    .layout { display: flex; flex: 1; overflow: hidden; }
+
+    .sidebar {
+      width: 300px; background: #111; border-right: 1px solid #222;
+      display: flex; flex-direction: column; padding: 14px; gap: 10px;
+      overflow-y: auto; flex-shrink: 0;
+    }
+    .sidebar label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+    .sidebar textarea {
+      flex: 1; min-height: 300px; background: #0d0d0d; color: #c8c8c8;
+      border: 1px solid #2a2a2a; border-radius: 4px; padding: 10px;
+      font-family: 'Courier New', monospace; font-size: 11px; resize: none;
+      line-height: 1.5;
+    }
+    .sidebar textarea:focus { outline: none; border-color: #7030A0; }
+
+    .canvas-wrap {
+      flex: 1; position: relative; overflow: hidden;
+      background: #0a0a0a; cursor: grab;
+    }
+    .canvas-wrap.panning { cursor: grabbing; }
+    .canvas-wrap canvas { display: block; }
+    .canvas-overlay {
+      position: absolute; bottom: 12px; left: 12px;
+      display: flex; gap: 6px; z-index: 10;
+    }
+    .canvas-overlay .btn-mini {
+      padding: 5px 10px; font-size: 11px; font-weight: normal;
+      background: rgba(0,0,0,0.65); color: #ccc;
+      border: 1px solid #333; border-radius: 4px;
+      cursor: pointer; backdrop-filter: blur(4px);
+    }
+    .canvas-overlay .btn-mini:hover { background: rgba(112,48,160,0.4); color: #fff; border-color: #7030A0; }
+    .zoom-readout {
+      position: absolute; bottom: 12px; right: 12px; z-index: 10;
+      padding: 4px 8px; font-size: 11px; color: #888;
+      background: rgba(0,0,0,0.65); border: 1px solid #333; border-radius: 4px;
+      backdrop-filter: blur(4px); font-family: 'Courier New', monospace;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>SE ENGINE</h1>
+  <button class="btn btn-primary" onclick="generate()">&#9654; Generate</button>
+  <button class="btn btn-download" onclick="downloadPptx()">&#8595; Print to PDF</button>
+  <div class="preset-group">
+    <label>Showcase:</label>
+    <button class="btn btn-preset" onclick="loadPreset('showcase_density')">A · 5 Branches</button>
+    <button class="btn btn-preset" onclick="loadPreset('showcase_tiny')">B · Tiny</button>
+    <button class="btn btn-preset" onclick="loadPreset('showcase_saas_mix')">C · SaaS / 3 Clouds</button>
+    <button class="btn btn-preset" onclick="loadPreset('showcase_replication_mesh')">D · Replication Mesh</button>
+    <button class="btn btn-preset" onclick="loadPreset('showcase_kitchen_sink')">E · Kitchen Sink</button>
+  </div>
+  <div class="preset-group">
+    <label>Current State (Competitor):</label>
+    <button class="btn btn-preset" onclick="loadPreset('competitor_commvault')" style="border-color:#7030A0;color:#c4a3ff">Commvault</button>
+    <button class="btn btn-preset" onclick="loadPreset('competitor_veeam')" style="border-color:#00B143;color:#7be0a0">Veeam</button>
+    <button class="btn btn-preset" onclick="loadPreset('competitor_networker')" style="border-color:#0076CE;color:#7fc1ff">NetWorker</button>
+    <button class="btn btn-preset" onclick="loadPreset('competitor_avamar')" style="border-color:#0076CE;color:#7fc1ff">Avamar</button>
+    <button class="btn btn-preset" onclick="loadPreset('competitor_rubrik')" style="border-color:#00B398;color:#82e0d3">Rubrik</button>
+    <button class="btn btn-preset" onclick="loadPreset('competitor_cohesity')" style="border-color:#02A9C7;color:#82d4e0">Cohesity</button>
+    <button class="btn btn-preset" onclick="loadPreset('competitor_unitrends')" style="border-color:#E2231A;color:#ff8a82">Unitrends</button>
+    <button class="btn btn-preset" onclick="window.open('/design/competitors_architecture','_blank')" title="Side-by-side comparison of all 6 competitor architectures">Compare All ↗</button>
+  </div>
+  <div class="preset-group">
+    <label>Legacy:</label>
+    <button class="btn btn-preset" onclick="loadPreset('1site')">1 Site</button>
+    <button class="btn btn-preset" onclick="loadPreset('2sites')">2 Sites</button>
+    <button class="btn btn-preset" onclick="loadPreset('3sites')">3 Sites</button>
+    <button class="btn btn-preset" onclick="loadPreset('4sites')">4 Sites</button>
+    <button class="btn btn-preset" onclick="loadPreset('stress')">Stress</button>
+    <button class="btn btn-preset" onclick="loadPreset('vegas_sd_sanjose')">Vegas/SD→SJ</button>
+    <button class="btn btn-preset" onclick="loadPreset('cloudonly')">Direct-to-AGP</button>
+    <button class="btn btn-preset" onclick="loadPreset('netapp_agp')">NetApp+AGP</button>
+    <button class="btn btn-preset" onclick="loadPreset('saas_multicloud')">SaaS Multi-Cloud</button>
+  </div>
+  <span id="status">Ready</span>
+</header>
+
+<div class="layout">
+  <div class="sidebar">
+    <label>Scenario JSON</label>
+    <textarea id="scenario" spellcheck="false"></textarea>
+  </div>
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="c"></canvas>
+    <div class="canvas-overlay">
+      <button class="btn-mini" onclick="fitToScreen()">⛶ Fit (F)</button>
+      <button class="btn-mini" onclick="resetZoom()">1:1</button>
+    </div>
+    <div class="zoom-readout" id="zoomReadout">100%</div>
+  </div>
+</div>
+
+<!-- AI Chat strip -->
+<div id="chatStrip">
+  <div id="chatToggle" onclick="toggleChat()">
+    <span class="dot"></span>
+    <span class="label">AI Scenario Chat</span>
+    <span class="hint">— describe a scenario in plain English, hit Enter</span>
+    <span class="expand-btn" id="expandIcon">▲</span>
+  </div>
+  <div id="chatMsgs">
+    <div class="cmsg sys">Describe any scenario — e.g. "3-site bank, Veeam + Data Domain, replicate to Azure"</div>
+  </div>
+  <div id="chatInputRow">
+    <textarea id="chatInput" rows="1" placeholder="Type a scenario or ask to change something…"></textarea>
+    <button id="chatSend" onclick="sendChat()">Send</button>
+  </div>
+</div>
+
+<script>
+  // Logical pixels per inch — components are designed in inches; we scale
+  // to a base 96-DPI raster, then the user zooms freely on top of that.
+  const PX = 96;
+  const DPR = Math.max(2, window.devicePixelRatio || 2);
+
+  const wrap = document.getElementById('canvasWrap');
+
+  function viewportSize() {
+    const rect = wrap.getBoundingClientRect();
+    return { w: Math.max(rect.width, 200), h: Math.max(rect.height, 200) };
+  }
+
+  const canvas = new fabric.Canvas('c', {
+    width: viewportSize().w,
+    height: viewportSize().h,
+    enableRetinaScaling: true,
+    selection: false,
+    backgroundColor: '#000000',
+    fireRightClick: false,
+    stopContextMenu: true,
+  });
+
+  // Fabric stores the user's zoom in canvas.viewportTransform[0] / [3].
+  // We supersample for crispness via a backing-store DPR multiplier handled
+  // separately in resizeCanvas() below.
+  let userZoom = 1.0;
+  // Content bbox in inches, set by renderShapes(); used for fit-to-screen.
+  let contentInches = { w: 13.33, h: 7.5 };
+
+  function resizeCanvas() {
+    const v = viewportSize();
+    canvas.setWidth(v.w);
+    canvas.setHeight(v.h);
+    canvas.calcOffset();
+    canvas.renderAll();
+  }
+  window.addEventListener('resize', () => { resizeCanvas(); });
+
+  function applyZoom(z, around) {
+    userZoom = Math.max(0.1, Math.min(z, 8));
+    const point = around || new fabric.Point(canvas.getWidth() / 2, canvas.getHeight() / 2);
+    canvas.zoomToPoint(point, userZoom);
+    document.getElementById('zoomReadout').textContent = Math.round(userZoom * 100) + '%';
+  }
+
+  function fitToScreen() {
+    const v = viewportSize();
+    const contentPx = { w: contentInches.w * PX, h: contentInches.h * PX };
+    const fit = Math.min(v.w / contentPx.w, v.h / contentPx.h) * 0.95;
+    canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);  // reset
+    applyZoom(fit, new fabric.Point(0, 0));
+    // Center content in viewport
+    const offsetX = (v.w - contentPx.w * fit) / 2;
+    const offsetY = (v.h - contentPx.h * fit) / 2;
+    const vt = canvas.viewportTransform.slice();
+    vt[4] = offsetX; vt[5] = offsetY;
+    canvas.setViewportTransform(vt);
+    canvas.renderAll();
+  }
+
+  function resetZoom() { applyZoom(1.0, new fabric.Point(0, 0));
+    const vt = canvas.viewportTransform.slice();
+    vt[4] = 16; vt[5] = 16;
+    canvas.setViewportTransform(vt);
+    canvas.renderAll();
+  }
+
+  // Mouse-wheel zoom around cursor
+  canvas.on('mouse:wheel', (opt) => {
+    const e = opt.e;
+    e.preventDefault();
+    e.stopPropagation();
+    const delta = e.deltaY;
+    const factor = delta > 0 ? 0.92 : 1.08;
+    const newZoom = userZoom * factor;
+    applyZoom(newZoom, new fabric.Point(e.offsetX, e.offsetY));
+  });
+
+  // Drag-to-pan on background. We intercept mouse:down/move/up and translate
+  // the viewportTransform; selection is disabled so this never fights with shapes.
+  let panning = false, panStart = null;
+  canvas.on('mouse:down', (opt) => {
+    panning = true;
+    panStart = { x: opt.e.clientX, y: opt.e.clientY };
+    wrap.classList.add('panning');
+  });
+  canvas.on('mouse:move', (opt) => {
+    if (!panning || !panStart) return;
+    const dx = opt.e.clientX - panStart.x;
+    const dy = opt.e.clientY - panStart.y;
+    panStart = { x: opt.e.clientX, y: opt.e.clientY };
+    const vt = canvas.viewportTransform.slice();
+    vt[4] += dx; vt[5] += dy;
+    canvas.setViewportTransform(vt);
+  });
+  canvas.on('mouse:up', () => {
+    panning = false; panStart = null;
+    wrap.classList.remove('panning');
+  });
+
+  // Keyboard: F = fit
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    if (e.key === 'f' || e.key === 'F') { fitToScreen(); }
+  });
+
+
+  // Load a named scenario file from the server (scenario_<name>.json)
+  function loadPreset(name) {
+    const status = document.getElementById('status');
+    status.textContent = `Loading ${name}…`;
+    fetch('/scenario/' + name)
+      .then(r => r.text())
+      .then(txt => {
+        document.getElementById('scenario').value = txt;
+        generate();
+      })
+      .catch(e => { status.textContent = 'Error: ' + e.message; });
+  }
+
+  // Load current scenario from server and auto-render. Supports a
+  // `?scenario=<name>` URL query param so the demo HTML pages can
+  // embed live previews via iframe by linking to /?scenario=<name>.
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    const named = params.get('scenario');
+    const url = named ? '/scenario/' + encodeURIComponent(named) : '/scenario';
+    fetch(url)
+      .then(r => r.text())
+      .then(txt => {
+        document.getElementById('scenario').value = txt;
+        generate();
+      });
+  })();
+
+  function px(inches) { return inches * PX; }
+
+  // Build a small filled triangle pointing from (fx,fy) → (tx,ty), placed
+  // at the (tx,ty) endpoint. Used for line arrowheads.
+  function makeArrowhead(fx, fy, tx, ty, stroke, sw) {
+    const px2 = (n) => n * PX;
+    const dx = px2(tx - fx), dy = px2(ty - fy);
+    const ang = Math.atan2(dy, dx);
+    const SIZE = Math.max(8, (sw || 1) * 5);
+    return new fabric.Triangle({
+      left: px2(tx),
+      top: px2(ty),
+      width: SIZE,
+      height: SIZE,
+      fill: stroke || '#5C5F6B',
+      angle: (ang * 180 / Math.PI) + 90,
+      originX: 'center',
+      originY: 'center',
+      selectable: false, evented: false,
+      hoverCursor: 'grab',
+    });
+  }
+
+  function renderShapes(data) {
+    canvas.clear();
+    canvas.setBackgroundColor(data.background, () => {});
+
+    // Update content bbox so fit-to-screen knows the full extent
+    contentInches = {
+      w: data.content_w || 13.33,
+      h: data.content_h || 7.5,
+    };
+
+    const imagePromises = [];
+
+    data.shapes.forEach(s => {
+      if (s.type === 'rect') {
+        const r = s.radius ? px(s.radius) : 0;
+        const rectShape = new fabric.Rect({
+          left: px(s.x), top: px(s.y),
+          width: px(s.w), height: px(s.h),
+          rx: r, ry: r,
+          fill: s.fill || 'transparent',
+          stroke: s.stroke || null,
+          strokeWidth: s.stroke ? (s.sw || 1) : 0,
+          selectable: false, evented: false,
+          hoverCursor: 'grab',
+        });
+        if (s.gradient) {
+          rectShape.set('fill', new fabric.Gradient({
+            type: 'linear',
+            coords: { x1: 0, y1: 0, x2: 0, y2: px(s.h) },
+            colorStops: [
+              { offset: 0, color: s.gradient[0] },
+              { offset: 1, color: s.gradient[1] }
+            ]
+          }));
+        }
+        canvas.add(rectShape);
+
+      } else if (s.type === 'text') {
+        const tb = new fabric.Textbox(s.text || '', {
+          left: px(s.x),
+          width: px(s.w),
+          fontSize: (s.fs || 10) * 1.33,
+          fill: s.color || '#FFFFFF',
+          fontFamily: 'Arial',
+          fontWeight: s.bold ? 'bold' : 'normal',
+          textAlign: s.align || 'left',
+          selectable: false, evented: false,
+          editable: false,
+          hoverCursor: 'grab',
+        });
+        if (s.valign === 'middle') {
+          tb.set({ originY: 'center', top: px(s.y) + px(s.h) / 2 });
+        } else if (s.valign === 'bottom') {
+          tb.set({ originY: 'bottom', top: px(s.y) + px(s.h) });
+        } else {
+          tb.set({ top: px(s.y) });
+        }
+        canvas.add(tb);
+
+      } else if (s.type === 'oval') {
+        const el = new fabric.Ellipse({
+          left: px(s.x), top: px(s.y),
+          rx: px(s.w) / 2, ry: px(s.h) / 2,
+          fill: s.fill || 'transparent',
+          stroke: s.stroke || null,
+          strokeWidth: s.stroke ? (s.sw || 1) : 0,
+          selectable: false, evented: false,
+          hoverCursor: 'grab',
+        });
+        canvas.add(el);
+        if (s.text) {
+          canvas.add(new fabric.Text(s.text, {
+            left: px(s.x) + px(s.w) / 2,
+            top: px(s.y) + px(s.h) / 2,
+            fontSize: (s.fs || 7) * 1.33,
+            fill: s.text_color || '#FFFFFF',
+            fontFamily: 'Arial', fontWeight: 'bold',
+            originX: 'center', originY: 'center',
+            selectable: false, evented: false,
+            hoverCursor: 'grab',
+          }));
+        }
+
+      } else if (s.type === 'line') {
+        const ln = new fabric.Line(
+          [px(s.x1), px(s.y1), px(s.x2), px(s.y2)],
+          {
+            stroke: s.stroke || '#5C5F6B',
+            strokeWidth: s.sw || 1,
+            strokeDashArray: s.dash === 'dash' ? [6, 4]
+                             : s.dash === 'dot' ? [2, 3] : null,
+            selectable: false, evented: false,
+            hoverCursor: 'grab',
+          }
+        );
+        canvas.add(ln);
+        // Arrowhead(s): triangle pointing along line direction at endpoint.
+        const arrow = s.arrow;
+        if (arrow === 'end' || arrow === 'both') {
+          canvas.add(makeArrowhead(s.x1, s.y1, s.x2, s.y2, s.stroke, s.sw));
+        }
+        if (arrow === 'start' || arrow === 'both') {
+          canvas.add(makeArrowhead(s.x2, s.y2, s.x1, s.y1, s.stroke, s.sw));
+        }
+
+      } else if (s.type === 'image') {
+        const url = '/assets/' + s.src;
+        const p = new Promise(resolve => {
+          fabric.Image.fromURL(url, img => {
+            if (img && img.width) {
+              img.set({
+                left: px(s.x), top: px(s.y),
+                scaleX: px(s.w) / img.width,
+                scaleY: px(s.h) / img.height,
+                selectable: false, evented: false,
+                hoverCursor: 'grab',
+              });
+              canvas.add(img);
+            }
+            resolve();
+          }, { crossOrigin: 'anonymous' });
+        });
+        imagePromises.push(p);
+      }
+    });
+
+    Promise.all(imagePromises).then(() => {
+      canvas.renderAll();
+      fitToScreen();
+    });
+  }
+
+  async function generate() {
+    const status = document.getElementById('status');
+    status.textContent = 'Generating...';
+    try {
+      const scenario = JSON.parse(document.getElementById('scenario').value);
+      const res = await fetch('/layout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(scenario)
+      });
+      const data = await res.json();
+      renderShapes(data);
+      status.textContent = `${data.shapes.length} shapes — ${contentInches.w.toFixed(1)}" × ${contentInches.h.toFixed(1)}"`;
+    } catch(e) {
+      status.textContent = 'Error: ' + e.message;
+      console.error(e);
+    }
+  }
+
+  async function downloadPptx() {
+    const status = document.getElementById('status');
+    status.textContent = 'Generating PPTX...';
+    try {
+      const scenario = JSON.parse(document.getElementById('scenario').value);
+      const res = await fetch('/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(scenario)
+      });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'diagram.pptx'; a.click();
+      status.textContent = 'Downloaded!';
+    } catch(e) {
+      status.textContent = 'Error: ' + e.message;
+    }
+  }
+
+  // Auto-size canvas on load
+  resizeCanvas();
+
+  // ── AI Chat ──
+  let chatExpanded = false;
+  function toggleChat() {
+    chatExpanded = !chatExpanded;
+    document.getElementById('chatStrip').classList.toggle('expanded', chatExpanded);
+    document.getElementById('expandIcon').textContent = chatExpanded ? '▼' : '▲';
+  }
+
+  function addChatMsg(role, text) {
+    const d = document.createElement('div');
+    d.className = 'cmsg ' + role;
+    d.textContent = text;
+    const msgs = document.getElementById('chatMsgs');
+    msgs.appendChild(d);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  async function sendChat() {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    input.style.height = '';
+    addChatMsg('user', text);
+    document.getElementById('chatSend').disabled = true;
+    const status = document.getElementById('status');
+    status.textContent = 'Parsing…';
+
+    try {
+      const res = await fetch('/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const scenario = await res.json();
+      if (scenario.error) throw new Error(scenario.error);
+
+      const pretty = JSON.stringify(scenario, null, 2);
+      document.getElementById('scenario').value = pretty;
+      addChatMsg('ai', `✓ Generated "${scenario.title || 'scenario'}" — rendering…`);
+      await generate();
+    } catch(e) {
+      addChatMsg('ai', '✗ Error: ' + e.message);
+      status.textContent = 'Error';
+    }
+    document.getElementById('chatSend').disabled = false;
+    input.focus();
+  }
+
+  document.getElementById('chatInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+  });
+</script>
+</body>
+</html>
