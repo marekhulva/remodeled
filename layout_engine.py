@@ -195,7 +195,7 @@ def _route_connections(scenario, row_dicts, registry):
 
 
 def _place_agp_zone(zone, site_rects, source_site_ids, site_ids, registry):
-    """Position AGP zone, draw source lines. Zero isinstance."""
+    """Position AGP zone to the RIGHT of sites, draw source lines. Zero isinstance."""
     x, y, chosen = _score_agp_placement(zone, site_rects, source_site_ids, site_ids)
     zone.apply_size_option(chosen)
     zw, zh = zone.preferred_size()
@@ -209,7 +209,7 @@ def _place_agp_zone(zone, site_rects, source_site_ids, site_ids, registry):
     line_shapes = []
     src_set = set(source_site_ids or [])
 
-    # Compute shared bus_y = max bottom of all agp_source components
+    # Shared bus_y = max bottom of all agp_source components
     source_bottoms = [cy + ch
                       for _, comp, cx, cy, cw, ch in registry.items()
                       if comp.agp_source != 'never']
@@ -233,6 +233,36 @@ def _place_agp_zone(zone, site_rects, source_site_ids, site_ids, registry):
                                 arrow='end', **stroke_kw))
 
     return line_shapes + list(zone.render(x, y, zw, zh)), x, y, zw, zh
+
+
+def _place_agp_zone_bottom(zone, ax, ay, source_site_ids, registry):
+    """Position AGP zone BELOW sites (bottom layout). Draw vertical source lines."""
+    zone.apply_size_option(zone.size_options()[0])
+    zw, zh = zone.preferred_size()
+
+    stroke_kw = dict(stroke=COLORS['purple_light'], sw=1.25, dash='dash')
+    line_shapes = []
+    src_set = set(source_site_ids or [])
+
+    # Horizontal bus line sits just above the AGP zone
+    bus_y = ay - 0.25
+    target_cx = ax + zw / 2
+
+    for comp_id, comp, cx, cy, cw, ch in registry.items():
+        if comp.agp_source == 'never':
+            continue
+        if comp.agp_source == 'explicit' and comp_id not in src_set:
+            continue
+        src_anchors = comp.routing_anchors(cx, cy, cw, ch)
+        src_pt = src_anchors.get('storage_bottom', src_anchors['bottom_center'])
+        src_x, src_y_pt = src_pt
+
+        line_shapes.append(line(src_x, src_y_pt, src_x, bus_y, **stroke_kw))
+        line_shapes.append(line(src_x, bus_y, target_cx, bus_y, **stroke_kw))
+        line_shapes.append(line(target_cx, bus_y, target_cx, ay,
+                                arrow='end', **stroke_kw))
+
+    return line_shapes + list(zone.render(ax, ay, zw, zh)), ax, ay, zw, zh
 
 
 def _reviewer_pass(registry, max_passes=3):
@@ -477,10 +507,12 @@ def generate_layout(scenario):
     row_top_y = MARGIN_TOP + 0.1 + unity_reserve
 
     # ── Phase 2: Panel reserve ─────────────────────────────────────────────
+    agp_position = (scenario.get('agp_position') or 'right').lower()
     panel_reserve = 0.0
-    for _, comp, _ in by_zone.get('right_panel', []):
-        mw, _ = comp.min_size()
-        panel_reserve = max(panel_reserve, mw + AGP_GAP)
+    if agp_position != 'bottom':
+        for _, comp, _ in by_zone.get('right_panel', []):
+            mw, _ = comp.min_size()
+            panel_reserve = max(panel_reserve, mw + AGP_GAP)
 
     sites_max_w = CANVAS_W - MARGIN_LEFT - MARGIN_RIGHT
     if panel_reserve > 0:
@@ -534,17 +566,37 @@ def generate_layout(scenario):
     else:
         agp_badge_num = str(min(len(sites_with_local), 2) + 1)
 
-    for i, (comp_id, comp, cfg) in enumerate(by_zone.get('right_panel', [])):
-        src_ids   = agp_source_ids(scenario, agp_index=i)
-        agp_shps, ax, ay, aw, ah = _place_agp_zone(
-            comp, site_rects, src_ids, row_ids, registry)
-        shapes.extend(agp_shps)
-        registry.register(comp_id, comp, ax, ay, aw, ah)
-        # AGP copy badge
-        bus_x    = ax - 0.15
-        t_anchors = comp.routing_anchors(ax, ay, aw, ah)
-        target_y  = t_anchors['cloud_entry'][1]
-        shapes.extend(_copy_badge(bus_x - 0.12, target_y - 0.12, agp_badge_num))
+    agp_position = (scenario.get('agp_position') or 'right').lower()
+    panel_entries = by_zone.get('right_panel', [])
+
+    if agp_position == 'bottom' and panel_entries:
+        # Stack all AGP zones horizontally below the site row
+        max_site_bottom = (max(r[1] + r[3] for r in site_rects)
+                           if site_rects else row_top_y)
+        bottom_y  = max_site_bottom + 0.55
+        cursor_x  = MARGIN_LEFT
+        for i, (comp_id, comp, cfg) in enumerate(panel_entries):
+            src_ids = agp_source_ids(scenario, agp_index=i)
+            agp_shps, ax, ay, aw, ah = _place_agp_zone_bottom(
+                comp, cursor_x, bottom_y, src_ids, registry)
+            shapes.extend(agp_shps)
+            registry.register(comp_id, comp, ax, ay, aw, ah)
+            t_anchors = comp.routing_anchors(ax, ay, aw, ah)
+            target_y  = t_anchors['cloud_entry'][1]
+            shapes.extend(_copy_badge(ax + aw + 0.05, ay, agp_badge_num))
+            cursor_x = ax + aw + AGP_GAP
+    else:
+        for i, (comp_id, comp, cfg) in enumerate(panel_entries):
+            src_ids   = agp_source_ids(scenario, agp_index=i)
+            agp_shps, ax, ay, aw, ah = _place_agp_zone(
+                comp, site_rects, src_ids, row_ids, registry)
+            shapes.extend(agp_shps)
+            registry.register(comp_id, comp, ax, ay, aw, ah)
+            # AGP copy badge
+            bus_x    = ax - 0.15
+            t_anchors = comp.routing_anchors(ax, ay, aw, ah)
+            target_y  = t_anchors['cloud_entry'][1]
+            shapes.extend(_copy_badge(bus_x - 0.12, target_y - 0.12, agp_badge_num))
 
     # ── Phase 5: Float placement ───────────────────────────────────────────
     float_entries = by_zone.get('float', [])
