@@ -235,32 +235,52 @@ def _place_agp_zone(zone, site_rects, source_site_ids, site_ids, registry):
     return line_shapes + list(zone.render(x, y, zw, zh)), x, y, zw, zh
 
 
-def _place_agp_zone_bottom(zone, ax, ay, source_site_ids, registry):
-    """Position AGP zone BELOW sites (bottom layout). Draw vertical source lines."""
+def _place_agp_zone_bottom(zone, ay, source_site_ids, registry, hint_x=None):
+    """Position one AGP zone below the site row.
+
+    Horizontal position is determined by minimising total distance to source
+    site anchors — the same physics the right-panel scorer uses, just applied
+    on the x-axis at a fixed y.  No hardcoded 'center' rule: if one site feeds
+    this AGP the zone pulls toward that site; if three sites feed it the zone
+    settles near their centroid naturally.
+
+    hint_x: left edge to start searching from (used when multiple AGPs are
+    placed in a row so they don't overlap each other).
+    """
     zone.apply_size_option(zone.size_options()[0])
     zw, zh = zone.preferred_size()
-
-    stroke_kw = dict(stroke=COLORS['purple_light'], sw=1.25, dash='dash')
-    line_shapes = []
     src_set = set(source_site_ids or [])
 
-    # Horizontal bus line sits just above the AGP zone
-    bus_y = ay - 0.25
-    target_cx = ax + zw / 2
-
+    # Collect source anchor x-coords
+    src_anchors_list = []
     for comp_id, comp, cx, cy, cw, ch in registry.items():
         if comp.agp_source == 'never':
             continue
         if comp.agp_source == 'explicit' and comp_id not in src_set:
             continue
-        src_anchors = comp.routing_anchors(cx, cy, cw, ch)
-        src_pt = src_anchors.get('storage_bottom', src_anchors['bottom_center'])
-        src_x, src_y_pt = src_pt
+        anch = comp.routing_anchors(cx, cy, cw, ch)
+        src_anchors_list.append(anch.get('storage_bottom', anch['bottom_center']))
 
+    # Ideal x: centroid of source anchors, then clamp to canvas
+    if src_anchors_list:
+        ideal_cx = sum(p[0] for p in src_anchors_list) / len(src_anchors_list)
+    else:
+        ideal_cx = (CANVAS_W - MARGIN_LEFT - MARGIN_RIGHT) / 2 + MARGIN_LEFT
+    ax = max(hint_x if hint_x is not None else MARGIN_LEFT,
+             min(ideal_cx - zw / 2, CANVAS_W - MARGIN_RIGHT - zw))
+
+    # Draw lines: each source drops straight down to a shared bus, then
+    # a single vertical drops from bus into the AGP top-center
+    bus_y     = ay - 0.25
+    target_cx = ax + zw / 2
+    stroke_kw = dict(stroke=COLORS['purple_light'], sw=1.25, dash='dash')
+    line_shapes = []
+
+    for src_x, src_y_pt in src_anchors_list:
         line_shapes.append(line(src_x, src_y_pt, src_x, bus_y, **stroke_kw))
-        line_shapes.append(line(src_x, bus_y, target_cx, bus_y, **stroke_kw))
-        line_shapes.append(line(target_cx, bus_y, target_cx, ay,
-                                arrow='end', **stroke_kw))
+        if abs(src_x - target_cx) > 0.01:
+            line_shapes.append(line(src_x, bus_y, target_cx, bus_y, **stroke_kw))
+    line_shapes.append(line(target_cx, bus_y, target_cx, ay, arrow='end', **stroke_kw))
 
     return line_shapes + list(zone.render(ax, ay, zw, zh)), ax, ay, zw, zh
 
@@ -570,21 +590,21 @@ def generate_layout(scenario):
     panel_entries = by_zone.get('right_panel', [])
 
     if agp_position == 'bottom' and panel_entries:
-        # Stack all AGP zones horizontally below the site row
+        # Place AGP zones below the site row.
+        # Each zone finds its own best x via distance-minimisation; hint_x
+        # prevents overlap when multiple AGPs are present.
         max_site_bottom = (max(r[1] + r[3] for r in site_rects)
                            if site_rects else row_top_y)
-        bottom_y  = max_site_bottom + 0.55
-        cursor_x  = MARGIN_LEFT
+        bottom_y = max_site_bottom + 0.55
+        hint_x   = MARGIN_LEFT
         for i, (comp_id, comp, cfg) in enumerate(panel_entries):
             src_ids = agp_source_ids(scenario, agp_index=i)
             agp_shps, ax, ay, aw, ah = _place_agp_zone_bottom(
-                comp, cursor_x, bottom_y, src_ids, registry)
+                comp, bottom_y, src_ids, registry, hint_x=hint_x)
             shapes.extend(agp_shps)
             registry.register(comp_id, comp, ax, ay, aw, ah)
-            t_anchors = comp.routing_anchors(ax, ay, aw, ah)
-            target_y  = t_anchors['cloud_entry'][1]
             shapes.extend(_copy_badge(ax + aw + 0.05, ay, agp_badge_num))
-            cursor_x = ax + aw + AGP_GAP
+            hint_x = ax + aw + AGP_GAP
     else:
         for i, (comp_id, comp, cfg) in enumerate(panel_entries):
             src_ids   = agp_source_ids(scenario, agp_index=i)
