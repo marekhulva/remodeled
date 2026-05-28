@@ -28,6 +28,8 @@ class OnPremSite(Component):
     priority = 1          # critical — last to shrink
     placement = 'anchor'  # natural position: packed left-to-right at top
     shrink_x  = 0.75     # sites CAN shrink when canvas is crowded (e.g. sites + AGP)
+    zone      = 'main_row'
+    agp_source = 'always' # on-prem sites always feed AGP via source lines
 
     LABEL_H = 0.22
     UNDERLINE_H = 0.03
@@ -331,3 +333,76 @@ class OnPremSite(Component):
             shapes.extend(self.callout.render(cx, cy, cw, ch))
 
         return shapes
+
+    # ── Storage geometry helpers ────────────────────────────────────────────
+    # These live here (not in layout_engine) because they access self._inner,
+    # which is private to OnPremSite. The engine calls routing_anchors() and
+    # copy_badge_anchor() instead — zero isinstance in the engine.
+
+    def _site_y(self, x, y, w, h):
+        """Absolute top-of-label-block Y, accounting for scatter_top."""
+        return y + self._scatter_top - self.LABEL_BLOCK_H - self.LABEL_GAP
+
+    def _inner_top_y(self, site_y):
+        """Y where the inner VStack begins (just inside the container)."""
+        return site_y + self.LABEL_BLOCK_H + self.LABEL_GAP + self.INNER_PAD
+
+    def _storage_layer_center_y(self, site_y):
+        """Absolute Y of the ProtectedDataLayer vertical center.
+        Returns None if the site has no PDL."""
+        cy = self._inner_top_y(site_y)
+        for child in self._inner.children:
+            ch = child.preferred_size()[1]
+            if isinstance(child, ProtectedDataLayer):
+                return cy + ch / 2
+            cy += ch + self._inner.gap
+        return None
+
+    def _storage_media_center_y(self, site_y):
+        """Absolute Y of the center of the actual storage media element
+        (HSX table or Pure logo) inside the ProtectedDataLayer.
+        More precise than PDL center for badge placement."""
+        cy = self._inner_top_y(site_y)
+        for child in self._inner.children:
+            ch = child.preferred_size()[1]
+            if isinstance(child, ProtectedDataLayer):
+                header_h = child.header.preferred_size()[1]
+                _, th = child.target.preferred_size()
+                return cy + header_h + child.GAP_AFTER_HEADER + th / 2
+            cy += ch + self._inner.gap
+        return None
+
+    def _storage_layer_bottom_y(self, site_y):
+        """Absolute Y of the bottom edge of the ProtectedDataLayer box."""
+        cy = self._inner_top_y(site_y)
+        for child in self._inner.children:
+            ch = child.preferred_size()[1]
+            if isinstance(child, ProtectedDataLayer):
+                return cy + ch
+            cy += ch + self._inner.gap
+        return None
+
+    # ── Routing / badge interface ───────────────────────────────────────────
+
+    def routing_anchors(self, x, y, w, h):
+        """Named anchor points. Adds 'storage_bottom' for AGP source lines."""
+        anchors = super().routing_anchors(x, y, w, h)
+        site_y = y + self._scatter_top - self.LABEL_BLOCK_H - self.LABEL_GAP
+        bottom = self._storage_layer_bottom_y(site_y)
+        if bottom is not None:
+            anchors['storage_bottom'] = (x + w / 2, bottom)
+        return anchors
+
+    def copy_badge_anchor(self, x, y, w, h):
+        """Return (bx, by) for the copy-number badge at the storage media center."""
+        site_y = y + self._scatter_top - self.LABEL_BLOCK_H - self.LABEL_GAP
+        mcy = self._storage_media_center_y(site_y)
+        if mcy is None:
+            return None
+        # Container rect to get the right-edge x
+        cr_x, cr_y, cr_w, cr_h = self.container_rect(x, y, w, h)
+        BADGE_SIZE = 0.30
+        pdl_box_pad = 0.07  # ProtectedDataLayer.BOX_PAD
+        bx = cr_x + cr_w - self.INNER_PAD - pdl_box_pad - BADGE_SIZE
+        by = mcy - BADGE_SIZE / 2
+        return (bx, by)

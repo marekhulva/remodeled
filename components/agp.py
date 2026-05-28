@@ -283,8 +283,10 @@ class AGPZone(Component):
     Cleanroom card placed SIDE-BY-SIDE next to it. Each cloud block is
     its own individually-outlined card. Callout bar spans underneath
     both cards when present."""
-    priority = 2          # important — shrinks only if SaaS isn't enough
-    placement = 'anchor'  # natural position aligned to on-prem storage layer
+    priority   = 2             # important — shrinks only if SaaS isn't enough
+    placement  = 'anchor'      # natural position aligned to on-prem storage layer
+    zone       = 'right_panel' # placed to the right of the main site row
+    agp_source = 'never'       # AGP is the target, not a source
 
     BREAK_GAP = 0.10
     SIBLING_GAP = 0.14     # horizontal gap between sibling AGP cards
@@ -490,6 +492,13 @@ class AGPZone(Component):
         first = self.agps[0]
         return (y + first.LABEL_H + first.LABEL_GAP
                 + first.CARD_PAD_TOP + first.CLOUD_H / 2)
+
+    def routing_anchors(self, x, y, w, h):
+        """Named anchors for the engine. Exposes 'cloud_entry' so AGP source
+        line routing works without isinstance checks in the engine."""
+        anchors = super().routing_anchors(x, y, w, h)
+        anchors['cloud_entry'] = (self.cloud_entry_x(x), self.cloud_entry_y(y))
+        return anchors
 
     def render(self, x, y, w, h):
         if self.layout_mode == self.LAYOUT_STACKED:

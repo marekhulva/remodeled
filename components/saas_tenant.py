@@ -60,10 +60,12 @@ def _fmt_users(n):
 class SaasTenantCard(Component):
     """Renders one SaaS tenant card. Handles m365 (split) and single-panel types."""
 
-    priority = 2
-    placement = 'anchor'
-    shrink_x   = 0.60    # SaaS cards compress when canvas is tight (e.g. 3 sites + AGP)
-    shrink_ratio = 0.70  # min_size = 70% of preferred width
+    priority     = 2
+    placement    = 'anchor'
+    zone         = 'float'   # floats in best free space (upper-right area), not in main row
+    agp_source   = 'never'
+    shrink_x     = 0.60      # SaaS cards compress when canvas is tight
+    shrink_ratio = 0.70      # min_size = 70% of preferred width
 
     # Preferred (unscaled) card dimensions
     CARD_H      = 0.80   # total card height

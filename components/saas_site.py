@@ -19,8 +19,10 @@ from .callout import Callout
 
 
 class SaaSSite(Component):
-    priority = 2          # grouped SaaS card behaves like a small site
-    placement = 'anchor'
+    priority   = 2          # grouped SaaS card behaves like a small site
+    placement  = 'anchor'
+    zone       = 'main_row'
+    agp_source = 'explicit' # only feeds AGP when named in source_site_ids
 
     LABEL_H = 0.24
     UNDERLINE_H = 0.03

@@ -31,6 +31,40 @@ class Component:
     placement = 'anchor'
     shrink_x = 0.0
     shrink_y = 0.0
+    # zone: which canvas region this component belongs to.
+    #   'main_row'    → packed left-to-right in the primary site row
+    #   'right_panel' → placed to the right of the main row (AGP zone)
+    #   'float'       → placed in best available free space (negative-space finder)
+    #   'header'      → centered above the main row (Unity, CommvaultCloud)
+    zone = 'main_row'
+    # layout_group: optional tag for grouping special float components.
+    #   'saas_pair' → SaaSAppCard items placed as a column grid with paired AGP cards.
+    #   None        → individual float placement via negative-space finder.
+    layout_group = None
+    # agp_source: routing intent for AGP source lines.
+    #   'always'   → always draws source lines to every AGP (on-prem, cloud sites)
+    #   'never'    → never draws source lines
+    #   'explicit' → only draws when named in flow graph source_site_ids
+    agp_source = 'never'
+
+    def routing_anchors(self, x, y, w, h):
+        """Named anchor points for connection routing.
+        Engine queries these instead of isinstance checks.
+        Override to expose internal points (storage_bottom, cloud_entry, etc.).
+        Returns dict of name → (abs_x, abs_y).
+        """
+        return {
+            'top_center':    (x + w / 2, y),
+            'bottom_center': (x + w / 2, y + h),
+            'left_center':   (x,         y + h / 2),
+            'right_center':  (x + w,     y + h / 2),
+        }
+
+    def copy_badge_anchor(self, x, y, w, h):
+        """Return (bx, by) for copy-number badge circle, or None.
+        Default: None. OnPremSite overrides to return storage media center.
+        """
+        return None
 
     def preferred_size(self):
         raise NotImplementedError(f'{type(self).__name__}.preferred_size()')

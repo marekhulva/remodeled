@@ -30,8 +30,10 @@ from .tokens import COLORS, IMAGES
 
 
 class CommvaultCloudCard(Component):
-    priority = 4          # cosmetic header — same as UnityCard
-    placement = 'free'    # engine centers it horizontally over content
+    priority   = 4          # cosmetic header — same as UnityCard
+    placement  = 'free'     # engine centers it horizontally over content
+    zone       = 'header'   # centered above main row
+    agp_source = 'never'
 
     CARD_W = 4.50
     CARD_H = 1.10

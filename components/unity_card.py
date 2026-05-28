@@ -19,8 +19,10 @@ from .tokens import COLORS, IMAGES
 
 
 class UnityCard(Component):
-    priority = 4          # cosmetic header — shrinks easily, lowest impact
-    placement = 'free'    # engine centers it horizontally over content
+    priority   = 4          # cosmetic header — shrinks easily, lowest impact
+    placement  = 'free'     # engine centers it horizontally over content
+    zone       = 'header'   # centered above main row
+    agp_source = 'never'
 
     CARD_W = 3.90
     CARD_H = 1.00

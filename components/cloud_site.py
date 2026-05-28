@@ -1,8 +1,8 @@
 """CloudSite — cloud provider container.
 
-Subclasses OnPremSite so the layout engine's `isinstance(s, OnPremSite)`
-routing checks (AGP source-line bus, copy badges, anchor placement)
-keep working unchanged. Visually it overrides:
+Subclasses OnPremSite for shared render logic. Declares zone='main_row'
+and agp_source='always' so the engine routes it correctly without any
+isinstance checks. Visually it overrides:
   - the label area: provider logo + name + region pill (one row, centered)
   - the underline + container border use the cloud's brand color
   - default backup_target='none' (cloud-direct to AGP via cloud-resident MA)
@@ -27,6 +27,9 @@ CLOUD_BRANDS = {
 
 
 class CloudSite(OnPremSite):
+    zone       = 'main_row'
+    agp_source = 'always'   # cloud sites feed AGP; source lines drawn via routing_anchors
+
     # Taller label row to fit logo + region pill alongside the name.
     LABEL_H = 0.30
     UNDERLINE_H = OnPremSite.UNDERLINE_H

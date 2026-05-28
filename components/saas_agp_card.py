@@ -27,8 +27,10 @@ ICONS_Y_CENTER = 0.55
 
 
 class SaaSAGPCard(Component):
-    priority = 3          # paired with SaaSAppCard — shrinks together
-    placement = 'fill'
+    priority   = 3          # paired with SaaSAppCard — shrinks together
+    placement  = 'fill'
+    zone       = 'float'
+    agp_source = 'never'
 
     LABEL_H       = 0.16
     UNDERLINE_H   = 0.0           # underline removed

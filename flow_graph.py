@@ -35,11 +35,20 @@ def classify_connection(c):
     return KIND_NETWORK
 
 
+def _is_default_agp_source(site_dict):
+    """True for site types that feed AGP by default (on-prem, cloud).
+    Non-source types: saas, saas_app, unity, header, cloud_native.
+    Adding a new non-source type = add it to this exclusion set.
+    Engine never changes."""
+    t = site_dict.get('type', 'on_prem')
+    return t not in ('saas', 'saas_app', 'unity', 'header', 'cloud_native')
+
+
 def _onprem_ids(sites_data):
-    """All on-prem site ids — the default AGP source set when an AGP
-    config doesn't list explicit sources."""
-    return [s.get('id') for s in sites_data
-            if (s.get('type') or s.get('kind') or 'on_prem') == 'on_prem']
+    """All default AGP source site ids — used when an AGP config doesn't
+    list explicit source_site_ids. Now type-agnostic: reads the exclusion
+    set in _is_default_agp_source instead of matching 'on_prem' literally."""
+    return [s.get('id') for s in sites_data if _is_default_agp_source(s)]
 
 
 def build_edges(scenario):

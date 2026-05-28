@@ -24,28 +24,37 @@ SLIDE_W = 13.33
 SLIDE_H = 7.50
 
 
-def _occupied_rects_on_slide(sites, site_rects, agp_config, title_h, unity_h):
+def _occupied_rects_on_slide(title_h, registry=None, site_rects=None):
     """Build the list of currently-occupied rectangles on the slide.
-    These define what space is NOT available for fill components."""
+
+    Preferred: pass `registry` (PlacementRegistry) — reads all placed rects
+    without any isinstance or type-specific knowledge.
+
+    Legacy fallback: pass `site_rects` list — used when called from old code
+    paths before the full registry is populated.
+    """
     occupied = []
-    # Title + unity band at top (everything from top down to where sites start).
-    occupied.append(Rect(0, 0, SLIDE_W, title_h + unity_h))
-    # On-prem and SaaS-grouped sites.
-    for r in site_rects:
-        occupied.append(Rect(*r))
-    # AGP zone (compute its natural xy; it's an anchor, never moved).
-    if agp_config and site_rects:
-        from layout_engine import _agp_xy
-        agp_x, agp_y = _agp_xy(agp_config, sites, site_rects)
-        agp_w, agp_h = AGPZone(agp_config).preferred_size()
-        occupied.append(Rect(agp_x, agp_y, agp_w, agp_h))
+    # Title band at top.
+    occupied.append(Rect(0, 0, SLIDE_W, title_h))
+    # All registered components (no type knowledge needed).
+    if registry is not None:
+        for r in registry.all_rects():
+            occupied.append(Rect(*r))
+    elif site_rects:
+        for r in site_rects:
+            occupied.append(Rect(*r))
     return occupied
 
 
 def saas_app_placement(saas_app_data, sites, site_rects, agp_config,
                        site_top_y, margin_left, fallback_gap=0.4,
-                       saas_layout=None):
+                       saas_layout=None, registry=None):
     """Find an empty region on the slide where the SaaS pairs fit.
+
+    `registry` (PlacementRegistry, preferred): uses all placed rects
+    without any isinstance checks.
+    `sites` / `site_rects` / `agp_config`: legacy params kept for
+    backward compatibility; ignored when registry is provided.
 
     `saas_layout` (optional override from the scenario):
       - "single_column"  → force n_cols=1, vertical stack
@@ -80,9 +89,9 @@ def saas_app_placement(saas_app_data, sites, site_rects, agp_config,
                   SLIDE_H - site_top_y - 0.30)
 
     occupied = _occupied_rects_on_slide(
-        sites, site_rects, agp_config,
         title_h=site_top_y - 0.10,  # roughly: title + unity reserve
-        unity_h=0.0,
+        registry=registry,
+        site_rects=site_rects,       # legacy fallback when registry not provided
     )
     rects = free_rects(canvas, occupied)
 
